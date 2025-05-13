@@ -1,0 +1,9 @@
+com\example\comparator\ComparisonController.class
+com\example\comparator\ConditionFileRepository.class
+com\example\comparator\ConditionGroupConfigurationDTO.class
+com\example\comparator\ComparisonResult.class
+com\example\comparator\EventConfigurationDTO.class
+com\example\comparator\ConditionFile.class
+com\example\comparator\WebhookEventDetailsDTO.class
+com\example\comparator\ConditionComparatorApplication.class
+com\example\comparator\ConditionComparisonService.class
