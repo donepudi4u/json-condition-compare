@@ -1,34 +1,45 @@
-@ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import org.junit.jupiter.api.*;
+import org.mockito.Mockito;
+import org.slf4j.MDC;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
+
+import java.lang.reflect.Method;
+import java.net.URI;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
 class SendNotificationClientImplTest {
 
-    @Mock
-    private WebClient webClient;
-
-    @Mock
-    private WebClient.RequestBodyUriSpec requestBodyUriSpec;
-
-    @Mock
-    private WebClient.RequestHeadersSpec<?> requestHeadersSpec;
-
-    @Mock
-    private WebClient.ResponseSpec responseSpec;
-
-    @Mock
-    private MaskingUtil maskingUtil;
-
-    @InjectMocks
+    private MockWebServer mockWebServer;
     private SendNotificationClientImpl sendNotificationClient;
+    private MaskingUtil maskingUtil;
 
     private final WebhookEventResponse payload = new WebhookEventResponse();
 
     @BeforeEach
-    void setup() {
+    void setup() throws Exception {
+        mockWebServer = new MockWebServer();
+        mockWebServer.start();
+
+        WebClient webClient = WebClient.builder()
+                .baseUrl(mockWebServer.url("/").toString())
+                .build();
+
+        maskingUtil = mock(MaskingUtil.class);
+        sendNotificationClient = new SendNotificationClientImpl(webClient, maskingUtil);
+
         MDC.put("transactionId", "test-tx-id");
     }
 
     @AfterEach
-    void cleanup() {
+    void tearDown() throws Exception {
+        mockWebServer.shutdown();
         MDC.clear();
     }
 
@@ -57,53 +68,34 @@ class SendNotificationClientImplTest {
     }
 
     @Test
-    void shouldSendNotificationSuccessfully() {
-        String url = "http://localhost:8080/notify?X-Header1=value1&X-Header2=value2";
+    void shouldSendNotificationSuccessfully() throws Exception {
+        mockWebServer.enqueue(new MockResponse().setResponseCode(200));
 
-        when(webClient.post()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri("http://localhost:8080/notify")).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.bodyValue(payload)).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.headers(any())).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.onStatus(any(), any())).thenReturn(responseSpec);
-        when(responseSpec.bodyToMono(Void.class)).thenReturn(Mono.empty());
+        String url = mockWebServer.url("/notify?X-Header1=value1&X-Header2=value2").toString();
 
         when(maskingUtil.mask("value1", '*')).thenReturn("*****");
         when(maskingUtil.mask("value2", '*')).thenReturn("*****");
 
         Mono<Void> result = sendNotificationClient.sendNotification(url, payload);
 
-        StepVerifier.create(result)
-                .verifyComplete();
+        StepVerifier.create(result).verifyComplete();
 
-        verify(webClient).post();
-        verify(requestBodyUriSpec).uri("http://localhost:8080/notify");
-        verify(requestBodyUriSpec).bodyValue(payload);
-        verify(requestHeadersSpec).headers(any());
-        verify(requestHeadersSpec).retrieve();
-        verify(responseSpec).onStatus(any(), any());
-        verify(responseSpec).bodyToMono(Void.class);
+        var request = mockWebServer.takeRequest();
+        assertEquals("POST", request.getMethod());
+        assertTrue(request.getPath().startsWith("/notify"));
     }
 
     @Test
-    void shouldHandleWebClientError() {
-        String url = "http://localhost:8080/notify";
+    void shouldHandleServerError() {
+        mockWebServer.enqueue(new MockResponse().setResponseCode(500));
 
-        when(webClient.post()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri(url)).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.bodyValue(payload)).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.headers(any())).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.onStatus(any(), any())).thenReturn(responseSpec);
-        when(responseSpec.bodyToMono(Void.class)).thenReturn(Mono.error(new RuntimeException("Webhook failed")));
+        String url = mockWebServer.url("/notify").toString();
 
         Mono<Void> result = sendNotificationClient.sendNotification(url, payload);
 
         StepVerifier.create(result)
-                .expectErrorSatisfies(ex -> {
-                    assertTrue(ex instanceof RuntimeException);
-                    assertEquals("Webhook failed", ex.getMessage());
-                })
+                .expectErrorMatches(ex -> ex instanceof RuntimeException &&
+                        ex.getMessage().contains("500"))
                 .verify();
     }
 
