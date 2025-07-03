@@ -2,38 +2,102 @@ package com.example.comparator.util;
 
 public class UtilityHelper {
 
+    @ExtendWith(MockitoExtension.class)
+    class SendNotificationClientTest {
 
+        @Mock
+        private WebClient webClient;
 
-    public Mono<Void> sendNotification(String webhookTarget, WebhookEventResponse payload) {
-        return webClient.post()
-                .uri(webhookTarget)
-                .bodyValue(payload)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, clientResponse ->
-                        clientResponse.bodyToMono(String.class)
-                                .defaultIfEmpty("No response body")
-                                .flatMap(body -> {
-                                    HttpStatus status = clientResponse.statusCode();
-                                    String message = "Status: " + status.value() + ", Body: " + body;
-                                    log.error("Notification failed - {}", message);
-                                    return Mono.error(new EventsProcessorException(status, message));
-                                })
-                )
-                .toBodilessEntity()
-                .doOnSuccess(response ->
-                        log.info("Notification delivered successfully with status: {}", response.getStatusCode())
-                )
-                .then(); // Return Mono<Void> to signal completion
+        @Mock
+        private WebClient.RequestBodyUriSpec requestBodyUriSpec;
+
+        @Mock
+        private WebClient.RequestHeadersSpec<?> requestHeadersSpec;
+
+        @Mock
+        private WebClient.RequestHeadersUriSpec<?> requestHeadersUriSpec;
+
+        @Mock
+        private WebClient.ResponseSpec responseSpec;
+
+        @InjectMocks
+        private SendNotificationClient sendNotificationClient;
+
+        private final WebhookEventResponse payload = new WebhookEventResponse();
+
+        @BeforeEach
+        void setup() {
+            MDC.put("transactionId", "test-tx-id");
+        }
+
+        @AfterEach
+        void cleanup() {
+            MDC.clear();
+        }
+
+        @Test
+        void shouldReturnErrorWhenWebhookTargetIsBlank() {
+            Mono<Void> result = sendNotificationClient.sendNotification("  ", payload);
+            StepVerifier.create(result)
+                    .expectErrorMatches(ex -> ex instanceof IllegalArgumentException &&
+                            ex.getMessage().equals("Missing Webhook URI"))
+                    .verify();
+        }
+
+        @Test
+        void shouldReturnErrorWhenWebhookTargetIsInvalidURI() {
+            Mono<Void> result = sendNotificationClient.sendNotification("ht@tp://bad uri", payload);
+            StepVerifier.create(result)
+                    .expectErrorMatches(ex -> ex instanceof IllegalArgumentException &&
+                            ex.getMessage().equals("Invalid Webhook URI"))
+                    .verify();
+        }
+
+        @Test
+        void shouldSendNotificationSuccessfully() {
+            String validUrl = "http://localhost:8080/notify?X-Header1=value1";
+
+            when(webClient.post()).thenReturn(requestBodyUriSpec);
+            when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodyUriSpec);
+            when(requestBodyUriSpec.bodyValue(any())).thenReturn(requestHeadersSpec);
+            when(requestHeadersSpec.headers(any())).thenReturn(requestHeadersSpec);
+            when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
+            when(responseSpec.onStatus(any(), any())).thenReturn(responseSpec);
+            when(responseSpec.bodyToMono(Void.class)).thenReturn(Mono.empty());
+
+            Mono<Void> result = sendNotificationClient.sendNotification(validUrl, payload);
+
+            StepVerifier.create(result)
+                    .verifyComplete();
+
+            verify(webClient).post();
+            verify(requestBodyUriSpec).uri("http://localhost:8080/notify");
+            verify(requestBodyUriSpec).bodyValue(payload);
+            verify(requestHeadersSpec).headers(any());
+            verify(requestHeadersSpec).retrieve();
+            verify(responseSpec).onStatus(any(), any());
+            verify(responseSpec).bodyToMono(Void.class);
+        }
+
+        @Test
+        void shouldHandleErrorFromWebClient() {
+            String validUrl = "http://localhost:8080/notify";
+
+            when(webClient.post()).thenReturn(requestBodyUriSpec);
+            when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodyUriSpec);
+            when(requestBodyUriSpec.bodyValue(any())).thenReturn(requestHeadersSpec);
+            when(requestHeadersSpec.headers(any())).thenReturn(requestHeadersSpec);
+            when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
+            when(responseSpec.onStatus(any(), any())).thenReturn(responseSpec);
+            when(responseSpec.bodyToMono(Void.class)).thenReturn(Mono.error(new RuntimeException("Webhook failed")));
+
+            Mono<Void> result = sendNotificationClient.sendNotification(validUrl, payload);
+
+            StepVerifier.create(result)
+                    .expectErrorMatches(ex -> ex instanceof RuntimeException &&
+                            ex.getMessage().equals("Webhook failed"))
+                    .verify();
+        }
     }
-
-    /*
-    sendNotification(webhookUrl, eventPayload)
-    .doOnSuccess(v -> dbService.updateStatus("SUCCESS"))
-    .doOnError(ex -> dbService.updateStatus("FAILURE: " + ex.getMessage()))
-    .subscribe(); // Triggers the pipeline
-
-     */
-
-
 
 }
