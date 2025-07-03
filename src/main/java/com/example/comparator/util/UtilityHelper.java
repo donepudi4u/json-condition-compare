@@ -32,7 +32,17 @@ class SendNotificationClientImplTest {
                 .build();
 
         maskingUtil = mock(MaskingUtil.class);
-        sendNotificationClient = new SendNotificationClientImpl(webClient, maskingUtil);
+        sendNotificationClient = new SendNotificationClientImpl();
+
+        // Inject mocks via reflection
+        Field webClientField = SendNotificationClientImpl.class.getDeclaredField("webClient");
+        webClientField.setAccessible(true);
+        webClientField.set(sendNotificationClient, webClient);
+
+        Field maskingUtilField = SendNotificationClientImpl.class.getDeclaredField("maskingUtil");
+        maskingUtilField.setAccessible(true);
+        maskingUtilField.set(sendNotificationClient, maskingUtil);
+
 
         MDC.put("transactionId", "test-tx-id");
     }
