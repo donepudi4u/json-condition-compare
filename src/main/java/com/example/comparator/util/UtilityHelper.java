@@ -2,17 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Ultra-Resilient Java-to-JSON</title>
+    <title>Universal Object-to-JSON Pro</title>
     <style>
         body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 20px; background: #f0f2f5; color: #333; }
         .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 1100px; margin: auto; }
-        .input-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
         textarea { width: 100%; height: 140px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-family: 'Consolas', monospace; box-sizing: border-box; font-size: 13px; background: #fafafa; }
         .toolbar { display: flex; gap: 15px; align-items: center; margin: 20px 0; flex-wrap: wrap; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #eee; }
         .search-box { flex-grow: 1; padding: 10px 15px; border: 1px solid #ccc; border-radius: 6px; }
         #field-selector { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 15px 0; max-height: 250px; overflow-y: auto; padding: 15px; border: 1px solid #eee; background: #fff; border-radius: 8px; }
-        .field-item { font-size: 13px; display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; border: 1px solid #f0f0f0; cursor: pointer; }
-        .field-item:hover { background: #e9ecef; }
+        .field-item { font-size: 13px; display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; border: 1px solid #f0f0f0; }
         .profile-section { display: flex; gap: 8px; align-items: center; border-left: 2px solid #ddd; padding-left: 15px; }
         pre { background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 8px; overflow-x: auto; font-size: 14px; border: 1px solid #333; }
         button { padding: 9px 18px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; transition: 0.2s; }
@@ -29,14 +27,15 @@
 <body>
 
 <div class="card">
-    <div class="input-header">
-        <label style="font-weight: 600;">Paste Data (Java toString or JSON):</label>
-    </div>
-    <textarea id="input" placeholder="Paste Company(name='TechCorp', departments=[...]) here..."></textarea>
+    <label style="font-weight: 600;">Paste Java toString or JSON Source:</label>
+    <textarea id="input" style="margin-top:8px;" placeholder="Paste data here..."></textarea>
 
     <div class="toolbar">
         <button class="btn-primary" onclick="loadFields()">Analyze Fields</button>
-        <label style="font-size: 13px; cursor: pointer;"><input type="checkbox" id="includeNulls"> Include Nulls</label>
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="font-size: 12px; cursor: pointer;"><input type="checkbox" id="includeNulls"> Include Nulls</label>
+            <label style="font-size: 12px; cursor: pointer;"><input type="checkbox" id="includeEmpty" checked> Include Empties ("", [], {})</label>
+        </div>
         
         <div class="profile-section">
             <input type="text" id="profileName" placeholder="Profile Name" style="padding: 8px; width: 120px; border: 1px solid #ccc; border-radius: 4px;">
@@ -70,16 +69,12 @@
     let currentData = {};
     let profiles = JSON.parse(localStorage.getItem('javaJsonProfiles') || '{}');
 
-    // UNIVERSAL PARSER: Handles nesting, lists, and key spaces
     function parseUniversal(str) {
         str = str.trim();
-        
-        // 1. Detect if it's already a JSON string
         if (str.startsWith('{') || str.startsWith('[')) {
-            try { return JSON.parse(str); } catch(e) { /* fall back to custom parser */ }
+            try { return JSON.parse(str); } catch(e) { }
         }
 
-        // 2. Extract content between outer brackets
         const startIdx = str.search(/[\(\{\[]/);
         const endIdx = Math.max(str.lastIndexOf(')'), str.lastIndexOf('}'), str.lastIndexOf(']'));
         if (startIdx === -1) return formatValue(str);
@@ -89,7 +84,6 @@
         let i = 0;
 
         while (i < content.length) {
-            // Find key (anything up to '=' or ':')
             let eqIdx = -1;
             for (let j = i; j < content.length; j++) {
                 if (content[j] === '=' || content[j] === ':') { eqIdx = j; break; }
@@ -99,7 +93,6 @@
             let key = content.substring(i, eqIdx).trim().replace(/^,/, '').trim();
             i = eqIdx + 1;
 
-            // Find value (handles nesting)
             let valStart = i;
             let bracketStack = [];
             let inQuotes = false;
@@ -109,9 +102,8 @@
                 let char = content[j];
                 if (char === "'" || char === '"') inQuotes = !inQuotes;
                 if (inQuotes) continue;
-
-                if (char === '(' || char === '{' || char === '[') bracketStack.push(char);
-                if (char === ')' || char === '}' || char === ']') bracketStack.pop();
+                if (['(', '{', '['].includes(char)) bracketStack.push(char);
+                if ([')', '}', ']'].includes(char)) bracketStack.pop();
 
                 if (bracketStack.length === 0 && char === ',' && !inQuotes) {
                     valEnd = j;
@@ -127,25 +119,30 @@
     }
 
     function processValue(val) {
-        if (val === "null") return null;
+        let cleaned = val.trim().replace(/^['"]|['"]$/g, '');
+        // Robust Null Check
+        if (cleaned.toLowerCase() === "null") return null;
+        
         if (val.startsWith('[') && val.endsWith(']')) {
-            return splitList(val.slice(1, -1)).map(item => processValue(item.trim()));
+            let items = splitList(val.slice(1, -1)).map(item => processValue(item.trim()));
+            return items.filter(it => it !== undefined); // Remove empty split artifacts
         }
-        if (val.includes('(') || val.includes('{')) {
+        if (val.includes('(') || (val.startsWith('{') && val.endsWith('}'))) {
             return parseUniversal(val);
         }
         return formatValue(val);
     }
 
     function splitList(listStr) {
+        if (!listStr.trim()) return [];
         let results = [];
         let start = 0, bracketStack = 0, inQuotes = false;
         for (let i = 0; i < listStr.length; i++) {
             let c = listStr[i];
             if (c === "'" || c === '"') inQuotes = !inQuotes;
             if (!inQuotes) {
-                if (c === '(' || c === '[' || c === '{') bracketStack++;
-                if (c === ')' || c === ']' || c === '}') bracketStack--;
+                if (['(', '[', '{'].includes(c)) bracketStack++;
+                if ([')', ']', '}'].includes(c)) bracketStack--;
                 if (c === ',' && bracketStack === 0) {
                     results.push(listStr.substring(start, i));
                     start = i + 1;
@@ -158,12 +155,39 @@
 
     function formatValue(v) {
         v = v.trim().replace(/^['"]|['"]$/g, '');
-        if (v === "true") return true;
-        if (v === "false") return false;
+        if (v.toLowerCase() === "true") return true;
+        if (v.toLowerCase() === "false") return false;
         return (!isNaN(v) && v !== "") ? Number(v) : v;
     }
 
-    // -- UI LOGIC --
+    function isEmpty(val) {
+        if (val === null) return false; // Handled by Null toggle
+        if (typeof val === 'string' && val.trim() === "") return true;
+        if (Array.isArray(val) && val.length === 0) return true;
+        if (typeof val === 'object' && Object.keys(val).length === 0) return true;
+        return false;
+    }
+
+    function generateJson() {
+        const includeNulls = document.getElementById('includeNulls').checked;
+        const includeEmpty = document.getElementById('includeEmpty').checked;
+        const selectedKeys = Array.from(document.querySelectorAll('#field-selector input:checked')).map(c => c.value);
+        
+        const out = {};
+        selectedKeys.forEach(k => {
+            const val = currentData[k];
+            const isNull = (val === null);
+            const isEmp = isEmpty(val);
+
+            // Logic: Include if it's not null (or we want nulls) AND it's not empty (or we want empties)
+            if ((!isNull || includeNulls) && (!isEmp || includeEmpty)) {
+                out[k] = val;
+            }
+        });
+        document.getElementById('output').innerText = JSON.stringify(out, null, 4);
+    }
+
+    // -- UI HELPERS --
     function loadFields() {
         currentData = parseUniversal(document.getElementById('input').value);
         renderFieldList();
@@ -180,17 +204,6 @@
             div.innerHTML = `<input type="checkbox" id="chk_${key}" checked value="${key}"> <label for="chk_${key}">${key}</label>`;
             container.appendChild(div);
         });
-    }
-
-    function generateJson() {
-        const includeNulls = document.getElementById('includeNulls').checked;
-        const selectedKeys = Array.from(document.querySelectorAll('#field-selector input:checked')).map(c => c.value);
-        const out = {};
-        selectedKeys.forEach(k => {
-            const val = currentData[k];
-            if (val !== null || includeNulls) out[k] = val;
-        });
-        document.getElementById('output').innerText = JSON.stringify(out, null, 4);
     }
 
     function saveProfile() {
