@@ -2,282 +2,244 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Enterprise Java-to-JSON Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spring Profile Comparator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 20px; background: #f0f2f5; color: #333; }
-        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 1100px; margin: auto; }
-        textarea { width: 100%; height: 160px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-family: 'Consolas', monospace; box-sizing: border-box; font-size: 13px; background: #fafafa; }
-        .toolbar { display: flex; gap: 15px; align-items: center; margin: 20px 0; flex-wrap: wrap; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #eee; }
-        #field-selector { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 15px 0; max-height: 300px; overflow-y: auto; padding: 15px; border: 1px solid #eee; background: #fff; border-radius: 8px; }
-        .field-item { font-size: 13px; display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; border: 1px solid #f0f0f0; }
-        .profile-section { display: flex; gap: 8px; align-items: center; border-left: 2px solid #ddd; padding-left: 15px; }
-        pre { background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 8px; overflow-x: auto; font-size: 14px; border: 1px solid #333; }
-        button { padding: 9px 18px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; transition: 0.2s; }
-        .btn-primary { background: #007bff; color: white; }
-        .btn-success { background: #28a745; color: white; width: 100%; font-size: 16px; padding: 15px; margin-top: 10px; }
-        .btn-outline { background: white; border: 1px solid #ddd; color: #555; }
-        .btn-copy { background: #6c757d; color: white; }
-        .status-badge { font-size: 11px; background: #28a745; color: #fff; padding: 2px 8px; border-radius: 10px; display: none; margin-left: 10px; }
-        .toast { visibility: hidden; min-width: 200px; background-color: #333; color: #fff; text-align: center; border-radius: 4px; padding: 10px; position: fixed; z-index: 1; left: 50%; bottom: 30px; transform: translateX(-50%); }
-        .toast.show { visibility: visible; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
-        @keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
-        @keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .row-match { color: #94a3b8; }
+        .row-diff { background-color: #fffbeb; }
+        .row-missing { background-color: #fef2f2; }
+        .sticky-col { position: sticky; left: 0; background: white; z-index: 10; border-right: 2px solid #e2e8f0; }
     </style>
 </head>
-<body>
+<body class="bg-slate-50 text-slate-900 min-h-screen p-4 md:p-8">
 
-<div class="card">
-    <h3 style="margin-top:0">Java toString to Postman JSON</h3>
-    <textarea id="input" placeholder="Paste Java string output here..."></textarea>
+    <div class="max-w-[1600px] mx-auto">
+        <header class="mb-8 flex flex-col md:flex-row justify-between items-end gap-4">
+            <div>
+                <h1 class="text-3xl font-black text-indigo-900 tracking-tighter uppercase">Spring Config Comparator</h1>                
+            </div>
+            <div class="flex gap-4">
+                <input type="text" id="searchInput" placeholder="Search keys (e.g. datasource)..." 
+                       class="px-4 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-indigo-500 w-80 shadow-sm">
+            </div>
+        </header>
 
-    <div class="toolbar">
-        <button class="btn-primary" onclick="loadFields()">Analyze Fields</button>
-        <div style="display: flex; flex-direction: column; gap: 5px;">
-            <label style="font-size: 12px; cursor: pointer;"><input type="checkbox" id="includeNulls"> Include Nulls</label>
-            <label style="font-size: 12px; cursor: pointer;"><input type="checkbox" id="includeEmpty" checked> Include Empties ("", [], {})</label>
-        </div>
-        
-        <div class="profile-section">
-            <input type="text" id="profileName" placeholder="Profile Name" style="padding: 8px; width: 120px; border: 1px solid #ccc; border-radius: 4px;">
-            <button class="btn-outline" onclick="saveProfile()">Save Profile</button>
-            <select id="profileSelect" onchange="applyProfile()" style="padding: 8px; border-radius: 4px;">
-                <option value="">-- Apply Profile --</option>
-            </select>
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <aside class="space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Load Files</h3>
+                    <label class="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-indigo-100 rounded-xl cursor-pointer bg-indigo-50/30 hover:bg-indigo-50 transition-all group">
+                        <span class="text-xs font-bold text-indigo-600">Drop application.yml files</span>
+                        <input type="file" id="fileInput" multiple class="hidden" accept=".yml,.yaml">
+                    </label>
+                    <button onclick="clearWorkspace()" class="w-full mt-4 text-[10px] font-black text-rose-500 uppercase tracking-widest hover:underline">Reset All</button>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Row Filters</h3>
+                    <div class="flex flex-col gap-2" id="filterButtons">
+                        <button onclick="setViewMode('all')" id="btn-all" class="view-btn bg-indigo-600 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all shadow-md">Show All Properties</button>
+                        <button onclick="setViewMode('diff')" id="btn-diff" class="view-btn bg-white text-slate-600 border border-slate-200 px-3 py-2 rounded-lg text-xs font-bold transition-all hover:bg-slate-50">Show Only Diffs</button>
+                        <button onclick="setViewMode('missing')" id="btn-missing" class="view-btn bg-white text-slate-600 border border-slate-200 px-3 py-2 rounded-lg text-xs font-bold transition-all hover:bg-slate-50">Show Only Missing</button>
+                    </div>
+                    
+                    <div class="mt-8">
+                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Compare Profiles</h3>
+                        <div id="profileChecklist" class="space-y-1 max-h-60 overflow-y-auto custom-scrollbar">
+                            <p class="text-xs text-slate-400 italic">No profiles loaded...</p>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <main class="lg:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="overflow-x-auto custom-scrollbar">
+                    <table class="w-full border-collapse" id="comparisonTable">
+                        <thead class="bg-slate-50 border-b border-slate-200">
+                            <tr id="tableHeader">
+                                <th class="p-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest sticky-col">Property Path</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody" class="divide-y divide-slate-100 text-sm">
+                            <tr><td class="p-20 text-center text-slate-400 italic" colspan="100%">Upload YAML files to see the comparison matrix.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </main>
         </div>
     </div>
 
-    <div id="filter-area" style="display:none;">
-        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-            <input type="text" id="searchFields" style="flex-grow:1; padding:10px; border-radius:6px; border:1px solid #ccc;" placeholder="Search fields..." oninput="filterDisplay()">
-            <button class="btn-outline" onclick="toggleAll(true)">All</button>
-            <button class="btn-outline" onclick="toggleAll(false)">None</button>
-        </div>
-        <div id="field-selector"></div>
-        <button class="btn-success" onclick="generateJson()">Generate Postman Payload</button>
-    </div>
+    <script>
+        let profilesData = {}; // Store all parsed profiles
+        let selectedProfileNames = []; // Active profiles for comparison
+        let viewMode = 'all';
+        let searchTerm = '';
 
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 25px;">
-        <div>
-            <h3 style="display:inline-block; margin:0;">Final Payload</h3>
-            <span id="genStatus" class="status-badge">GENERATED!</span>
-        </div>
-        <button class="btn-copy" onclick="copyToClipboard()">Copy JSON</button>
-    </div>
-    <pre id="output">{}</pre>
-</div>
-
-<div id="toast" class="toast">Action Successful!</div>
-
-<script>
-    let rawParsedData = {};
-    let profiles = JSON.parse(localStorage.getItem('javaJsonProfiles') || '{}');
-
-    // 1. Core Parser: Handles the string-to-object conversion
-    function parseUniversal(str) {
-        str = str.trim();
-        const startIdx = str.search(/[\(\{\[]/);
-        const endIdx = Math.max(str.lastIndexOf(')'), str.lastIndexOf('}'), str.lastIndexOf(']'));
-        
-        if (startIdx === -1) return sanitizeRawValue(str);
-
-        const content = str.substring(startIdx + 1, endIdx);
-        const result = {};
-        let i = 0;
-
-        while (i < content.length) {
-            let eqIdx = -1;
-            for (let j = i; j < content.length; j++) {
-                if (content[j] === '=' || content[j] === ':') { eqIdx = j; break; }
-            }
-            if (eqIdx === -1) break;
-
-            let key = content.substring(i, eqIdx).trim().replace(/^,/, '').trim();
-            // Critical fix: Remove any leading/trailing brackets from key names
-            key = key.replace(/^[\(\{\[]|[\)\}\]]$/g, '');
-            i = eqIdx + 1;
-
-            let bracketStack = [];
-            let inQuotes = false;
-            let valEnd = content.length;
-
-            for (let j = i; j < content.length; j++) {
-                let char = content[j];
-                if (char === "'" || char === '"') inQuotes = !inQuotes;
-                if (inQuotes) continue;
-                if (['(', '{', '['].includes(char)) bracketStack.push(char);
-                if ([')', '}', ']'].includes(char)) bracketStack.pop();
-                if (bracketStack.length === 0 && char === ',' && !inQuotes) {
-                    valEnd = j;
-                    break;
+        function flatten(obj, prefix = '') {
+            return Object.keys(obj).reduce((acc, k) => {
+                const pre = prefix.length ? prefix + '.' : '';
+                if (obj[k] !== null && typeof obj[k] === 'object' && !Array.isArray(obj[k])) {
+                    Object.assign(acc, flatten(obj[k], pre + k));
+                } else {
+                    acc[pre + k] = obj[k];
                 }
-            }
-
-            let valStr = content.substring(i, valEnd).trim();
-            result[key] = processValue(valStr);
-            i = valEnd + 1;
-        }
-        return result;
-    }
-
-    function processValue(val) {
-        let cleaned = val.trim().replace(/^['"]|['"]$/g, '');
-        let lower = cleaned.toLowerCase();
-
-        if (lower === "null" || lower === "nu11" || lower === "nul1") return null;
-        if (val === "[]") return [];
-
-        // Handle List of Objects (e.g., contact=[(...)])
-        if (val.startsWith('[') && val.endsWith(']')) {
-            const inner = val.slice(1, -1).trim();
-            if (!inner) return [];
-            return splitList(inner).map(item => processValue(item.trim()));
+                return acc;
+            }, {});
         }
 
-        // Handle Nested Objects (e.g., address=(...))
-        if (val.includes('=') && (val.includes('(') || val.includes('{'))) {
-            return parseUniversal(val);
-        }
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const files = Array.from(e.target.files);
+            let processedCount = 0;
 
-        return cleaned; // Preserve exact string (e.g., 0.00)
-    }
-
-    function splitList(listStr) {
-        let results = [], start = 0, stack = 0, q = false;
-        for (let i = 0; i < listStr.length; i++) {
-            let c = listStr[i];
-            if (c === "'" || c === '"') q = !q;
-            if (!q) {
-                if (['(', '[', '{'].includes(c)) stack++;
-                if ([')', ']', '}'].includes(c)) stack--;
-                if (c === ',' && stack === 0) {
-                    results.push(listStr.substring(start, i));
-                    start = i + 1;
-                }
-            }
-        }
-        results.push(listStr.substring(start));
-        return results;
-    }
-
-    function sanitizeRawValue(v) {
-        return v.trim().replace(/^['"]|['"]$/g, '');
-    }
-
-    // 2. Recursive Cleaner: Removes nulls/empties from all levels
-    function deepClean(obj, includeNulls, includeEmpty) {
-        if (obj === null) return null;
-        if (Array.isArray(obj)) {
-            const arr = obj.map(v => deepClean(v, includeNulls, includeEmpty)).filter(v => {
-                if (!includeNulls && v === null) return false;
-                if (!includeEmpty && (v === "" || (Array.isArray(v) && v.length === 0) || (typeof v === 'object' && v !== null && Object.keys(v).length === 0))) return false;
-                return true;
+            files.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const docs = jsyaml.loadAll(event.target.result);
+                        docs.forEach((doc, i) => {
+                            const internalName = doc?.spring?.config?.activate?.['on-profile'] || doc?.spring?.profiles?.active || doc?.spring?.profiles;
+                            const fileName = file.name.replace(/application-|\.ya?ml/g, '');
+                            const finalName = internalName || (docs.length === 1 ? fileName : `${fileName}-${i+1}`);
+                            
+                            profilesData[finalName] = flatten(doc || {});
+                            if (!selectedProfileNames.includes(finalName)) {
+                                selectedProfileNames.push(finalName);
+                            }
+                        });
+                    } catch (err) { console.error("Parse Error", err); }
+                    
+                    processedCount++;
+                    if (processedCount === files.length) render();
+                };
+                reader.readAsText(file);
             });
-            return arr;
-        } else if (typeof obj === 'object') {
-            const newObj = {};
-            for (let key in obj) {
-                let val = deepClean(obj[key], includeNulls, includeEmpty);
-                let isNull = (val === null);
-                let isEmpty = (val === "" || (Array.isArray(val) && val.length === 0) || (typeof val === 'object' && val !== null && Object.keys(val).length === 0));
+        });
 
-                if (!includeNulls && isNull) continue;
-                if (!includeEmpty && isEmpty) continue;
-                
-                newObj[key] = val;
-            }
-            return newObj;
+        function setViewMode(mode) {
+            viewMode = mode;
+            document.querySelectorAll('.view-btn').forEach(btn => {
+                btn.classList.remove('bg-indigo-600', 'text-white', 'shadow-md');
+                btn.classList.add('bg-white', 'text-slate-600', 'border-slate-200');
+            });
+            const activeBtn = document.getElementById(`btn-${mode}`);
+            activeBtn.classList.remove('bg-white', 'text-slate-600', 'border-slate-200');
+            activeBtn.classList.add('bg-indigo-600', 'text-white', 'shadow-md');
+            render();
         }
-        return obj;
-    }
 
-    // 3. UI Logic
-    function loadFields() {
-        rawParsedData = parseUniversal(document.getElementById('input').value);
-        renderFieldList();
-        document.getElementById('filter-area').style.display = 'block';
-        updateProfileDropdown();
-    }
-
-    function renderFieldList() {
-        const container = document.getElementById('field-selector');
-        container.innerHTML = '';
-        Object.keys(rawParsedData).forEach(key => {
-            const div = document.createElement('div');
-            div.className = 'field-item';
-            div.innerHTML = `<input type="checkbox" id="chk_${key}" checked value="${key}"> <label for="chk_${key}">${key}</label>`;
-            container.appendChild(div);
-        });
-    }
-
-    function generateJson() {
-        const includeNulls = document.getElementById('includeNulls').checked;
-        const includeEmpty = document.getElementById('includeEmpty').checked;
-        const selectedKeys = Array.from(document.querySelectorAll('#field-selector input:checked')).map(c => c.value);
-        
-        let filteredData = {};
-        selectedKeys.forEach(k => {
-            filteredData[k] = rawParsedData[k];
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            searchTerm = e.target.value.toLowerCase();
+            render();
         });
 
-        const finalOutput = deepClean(filteredData, includeNulls, includeEmpty);
-        document.getElementById('output').innerText = JSON.stringify(finalOutput, null, 4);
-        
-        const badge = document.getElementById('genStatus');
-        badge.style.display = 'inline-block';
-        setTimeout(() => { badge.style.display = 'none'; }, 2000);
-    }
+        function toggleProfile(name) {
+            if (selectedProfileNames.includes(name)) {
+                selectedProfileNames = selectedProfileNames.filter(p => p !== name);
+            } else {
+                selectedProfileNames.push(name);
+            }
+            render();
+        }
 
-    function saveProfile() {
-        const name = document.getElementById('profileName').value;
-        if (!name) return alert("Enter name");
-        profiles[name] = Array.from(document.querySelectorAll('#field-selector input:checked')).map(c => c.value);
-        localStorage.setItem('javaJsonProfiles', JSON.stringify(profiles));
-        updateProfileDropdown();
-        showToast("Profile Saved");
-    }
+        function clearWorkspace() {
+            profilesData = {};
+            selectedProfileNames = [];
+            document.getElementById('fileInput').value = '';
+            render();
+        }
 
-    function applyProfile() {
-        const name = document.getElementById('profileSelect').value;
-        if (!name) return;
-        const savedKeys = profiles[name];
-        document.querySelectorAll('#field-selector input').forEach(chk => {
-            chk.checked = savedKeys.includes(chk.value);
-        });
-    }
+        function render() {
+            const allProfileNames = Object.keys(profilesData);
+            const header = document.getElementById('tableHeader');
+            const body = document.getElementById('tableBody');
+            const checklist = document.getElementById('profileChecklist');
 
-    function updateProfileDropdown() {
-        const sel = document.getElementById('profileSelect');
-        sel.innerHTML = '<option value="">-- Apply Profile --</option>';
-        Object.keys(profiles).forEach(p => {
-            const opt = document.createElement('option');
-            opt.value = p; opt.innerText = p;
-            sel.appendChild(opt);
-        });
-    }
+            // 1. Update Profile Checklist UI
+            checklist.innerHTML = allProfileNames.map(name => `
+                <label class="flex items-center gap-2 text-[11px] font-bold text-slate-600 p-2 hover:bg-slate-50 rounded-lg cursor-pointer transition-all border border-transparent hover:border-indigo-100">
+                    <input type="checkbox" ${selectedProfileNames.includes(name) ? 'checked' : ''} 
+                           onchange="toggleProfile('${name}')"
+                           class="rounded border-slate-300 text-indigo-600 focus:ring-0"> 
+                    <span class="truncate">${name}</span>
+                </label>
+            `).join('') || '<p class="text-xs text-slate-400 italic">No profiles loaded...</p>';
 
-    function filterDisplay() {
-        const term = document.getElementById('searchFields').value.toLowerCase();
-        document.querySelectorAll('.field-item').forEach(item => {
-            item.style.display = item.innerText.toLowerCase().includes(term) ? 'flex' : 'none';
-        });
-    }
+            // 2. Update Table Header (Only selected profiles)
+            header.innerHTML = '<th class="p-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest sticky-col">Property Path</th>';
+            selectedProfileNames.forEach(name => {
+                const th = document.createElement('th');
+                th.className = "p-4 text-[10px] font-black text-indigo-900 uppercase tracking-widest border-l border-slate-100 text-center min-w-[150px]";
+                th.innerText = name;
+                header.appendChild(th);
+            });
 
-    function toggleAll(state) {
-        document.querySelectorAll('#field-selector input').forEach(c => c.checked = state);
-    }
+            // 3. Update Table Body
+            body.innerHTML = '';
+            if (selectedProfileNames.length === 0) {
+                body.innerHTML = '<tr><td class="p-20 text-center text-slate-400 italic" colspan="100%">Select at least one profile to compare.</td></tr>';
+                return;
+            }
 
-    function copyToClipboard() {
-        navigator.clipboard.writeText(document.getElementById('output').innerText);
-        showToast("Copied to Clipboard!");
-    }
+            // Get unique keys only from selected profiles
+            const activeKeys = [...new Set(selectedProfileNames.flatMap(p => Object.keys(profilesData[p])))].sort();
 
-    function showToast(msg) {
-        const x = document.getElementById("toast");
-        x.innerText = msg; x.className = "toast show";
-        setTimeout(() => x.className = "toast", 3000);
-    }
+            activeKeys.forEach(key => {
+                if (searchTerm && !key.toLowerCase().includes(searchTerm)) return;
 
-    updateProfileDropdown();
-</script>
+                const values = selectedProfileNames.map(p => profilesData[p][key]);
+                const isMissing = values.some(v => v === undefined);
+                const allSame = values.every(v => JSON.stringify(v) === JSON.stringify(values[0]));
+
+                let rowClass = 'row-match';
+                let statusLabel = 'MATCH';
+                
+                if (isMissing) {
+                    rowClass = 'row-missing';
+                    statusLabel = 'MISSING';
+                } else if (!allSame) {
+                    rowClass = 'row-diff';
+                    statusLabel = 'DIFF';
+                }
+
+                if (viewMode === 'diff' && statusLabel === 'MATCH') return;
+                if (viewMode === 'missing' && statusLabel !== 'MISSING') return;
+
+                const row = document.createElement('tr');
+                row.className = `${rowClass} group transition-colors`;
+
+                let rowHtml = `
+                    <td class="p-3 border-b border-slate-100 sticky-col shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                        <div class="flex flex-col gap-1">
+                            <code class="text-[11px] font-bold text-slate-700 break-all leading-tight">${key}</code>
+                            <span class="text-[8px] font-black w-fit px-1.5 rounded border ${
+                                statusLabel === 'MATCH' ? 'text-slate-400 border-slate-200' : 
+                                statusLabel === 'DIFF' ? 'text-amber-600 border-amber-200 bg-amber-50' : 
+                                'text-rose-600 border-rose-200 bg-rose-50'
+                            }">${statusLabel}</span>
+                        </div>
+                    </td>
+                `;
+
+                selectedProfileNames.forEach(p => {
+                    const val = profilesData[p][key];
+                    const isUndefined = val === undefined;
+                    rowHtml += `
+                        <td class="p-3 border-b border-slate-100 border-l border-slate-50 text-center font-medium">
+                            <span class="${isUndefined ? 'text-rose-300 italic font-bold opacity-50' : 'text-slate-800'}">
+                                ${isUndefined ? 'NULL' : (val === '' ? '[empty]' : val)}
+                            </span>
+                        </td>
+                    `;
+                });
+
+                row.innerHTML = rowHtml;
+                body.appendChild(row);
+            });
+        }
+    </script>
 </body>
 </html>
