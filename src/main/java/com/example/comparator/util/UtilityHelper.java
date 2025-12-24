@@ -3,131 +3,178 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Spring Profile Comparator</title>
+    <title>Spring Architect | Cross-Project Audit</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        .row-match { color: #94a3b8; }
+        body { font-family: 'Inter', sans-serif; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+
+        /* Status Styling */
+        .row-match { color: #64748b; }
         .row-diff { background-color: #fffbeb; }
         .row-missing { background-color: #fef2f2; }
-        .sticky-col { position: sticky; left: 0; background: white; z-index: 10; border-right: 2px solid #e2e8f0; }
+        
+        /* Glassmorphism Sticky Column */
+        .sticky-col { 
+            position: sticky; left: 0; background: rgba(255, 255, 255, 0.95); 
+            backdrop-filter: blur(8px); z-index: 20; 
+            border-right: 1px solid #e2e8f0; min-width: 420px;
+        }
+        
+        th { position: sticky; top: 0; background: #f8fafc; z-index: 30; border-bottom: 1px solid #e2e8f0; }
+
+        .value-cell { 
+            min-width: 320px; max-width: 600px; word-break: break-all; 
+            white-space: pre-wrap; font-size: 13px; line-height: 1.6;
+        }
+
+        .gradient-border {
+            border: 1px solid transparent;
+            background: linear-gradient(white, white) padding-box, 
+                        linear-gradient(to right, #6366f1, #a855f7) border-box;
+        }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen p-4 md:p-8">
+<body class="bg-[#fcfcfd] text-[#1e293b] min-h-screen pb-12">
 
-    <div class="max-w-[1600px] mx-auto">
-        <header class="mb-8 flex flex-col md:flex-row justify-between items-end gap-4">
-            <div>
-                <h1 class="text-3xl font-black text-indigo-900 tracking-tighter uppercase">Spring Config Comparator</h1>                
+    <nav class="border-b border-slate-200 bg-white/80 backdrop-blur-md sticky top-0 z-50 px-6 py-4">
+        <div class="max-w-[1900px] mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
+                    <span class="text-white text-xl font-bold">S</span>
+                </div>
+                <div>
+                    <h1 class="text-lg font-extrabold tracking-tight text-slate-900 leading-none">Spring Architect</h1>
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Cross-Project Configuration Audit</p>
+                </div>
             </div>
-            <div class="flex gap-4">
-                <input type="text" id="searchInput" placeholder="Search keys (e.g. datasource)..." 
-                       class="px-4 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-indigo-500 w-80 shadow-sm">
-            </div>
-        </header>
-
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <aside class="space-y-6">
-                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Load Files</h3>
-                    <label class="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-indigo-100 rounded-xl cursor-pointer bg-indigo-50/30 hover:bg-indigo-50 transition-all group">
-                        <span class="text-xs font-bold text-indigo-600">Drop application.yml files</span>
-                        <input type="file" id="fileInput" multiple class="hidden" accept=".yml,.yaml">
-                    </label>
-                    <button onclick="clearWorkspace()" class="w-full mt-4 text-[10px] font-black text-rose-500 uppercase tracking-widest hover:underline">Reset All</button>
-                </div>
-
-                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Row Filters</h3>
-                    <div class="flex flex-col gap-2" id="filterButtons">
-                        <button onclick="setViewMode('all')" id="btn-all" class="view-btn bg-indigo-600 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all shadow-md">Show All Properties</button>
-                        <button onclick="setViewMode('diff')" id="btn-diff" class="view-btn bg-white text-slate-600 border border-slate-200 px-3 py-2 rounded-lg text-xs font-bold transition-all hover:bg-slate-50">Show Only Diffs</button>
-                        <button onclick="setViewMode('missing')" id="btn-missing" class="view-btn bg-white text-slate-600 border border-slate-200 px-3 py-2 rounded-lg text-xs font-bold transition-all hover:bg-slate-50">Show Only Missing</button>
-                    </div>
-                    
-                    <div class="mt-8">
-                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Compare Profiles</h3>
-                        <div id="profileChecklist" class="space-y-1 max-h-60 overflow-y-auto custom-scrollbar">
-                            <p class="text-xs text-slate-400 italic">No profiles loaded...</p>
-                        </div>
-                    </div>
-                </div>
-            </aside>
-
-            <main class="lg:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div class="overflow-x-auto custom-scrollbar">
-                    <table class="w-full border-collapse" id="comparisonTable">
-                        <thead class="bg-slate-50 border-b border-slate-200">
-                            <tr id="tableHeader">
-                                <th class="p-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest sticky-col">Property Path</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tableBody" class="divide-y divide-slate-100 text-sm">
-                            <tr><td class="p-20 text-center text-slate-400 italic" colspan="100%">Upload YAML files to see the comparison matrix.</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </main>
+            <button onclick="window.location.reload()" class="text-xs font-bold text-slate-400 hover:text-rose-500 transition-all uppercase tracking-tighter">Reset Session</button>
         </div>
+    </nav>
+
+    <div class="max-w-[1900px] mx-auto p-6 space-y-8">
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-2 h-6 bg-blue-500 rounded-full"></div>
+                    <input type="text" id="proj1Name" value="Primary-Service" class="bg-transparent font-bold text-slate-700 outline-none focus:text-blue-600 transition-colors">
+                </div>
+                <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-100 rounded-2xl cursor-pointer bg-slate-50/50 hover:bg-blue-50/50 hover:border-blue-200 transition-all group">
+                    <span class="text-xs font-bold text-slate-400 group-hover:text-blue-600">Select Project 1 YAML Files</span>
+                    <input type="file" id="fileInput1" multiple class="hidden" accept=".yml,.yaml">
+                </label>
+            </div>
+
+            <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-2 h-6 bg-emerald-500 rounded-full"></div>
+                    <input type="text" id="proj2Name" value="Target-Service" class="bg-transparent font-bold text-slate-700 outline-none focus:text-emerald-600 transition-colors">
+                </div>
+                <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-100 rounded-2xl cursor-pointer bg-slate-50/50 hover:bg-emerald-50/50 hover:border-emerald-200 transition-all group">
+                    <span class="text-xs font-bold text-slate-400 group-hover:text-emerald-600">Select Project 2 YAML Files</span>
+                    <input type="file" id="fileInput2" multiple class="hidden" accept=".yml,.yaml">
+                </label>
+            </div>
+        </div>
+
+        <section id="uiControls" class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 hidden animate-in fade-in duration-500">
+            <div class="space-y-6">
+                <div>
+                    <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Active Profiles Comparison Matrix</h3>
+                    <div id="profilePills" class="flex flex-wrap gap-3"></div>
+                </div>
+
+                <div class="flex flex-col md:flex-row gap-6 items-center border-t border-slate-50 pt-6">
+                    <div class="flex gap-1 p-1 bg-slate-100 rounded-xl h-fit">
+                        <button onclick="setViewMode('all')" id="btn-all" class="view-btn px-6 py-2 rounded-lg text-xs font-bold bg-white text-indigo-600 shadow-sm">All</button>
+                        <button onclick="setViewMode('diff')" id="btn-diff" class="view-btn px-6 py-2 rounded-lg text-xs font-bold text-slate-500 hover:text-indigo-600">Mismatches</button>
+                        <button onclick="setViewMode('missing')" id="btn-missing" class="view-btn px-6 py-2 rounded-lg text-xs font-bold text-slate-500 hover:text-indigo-600">Missing</button>
+                    </div>
+                    <div class="relative flex-1">
+                        <input type="text" id="searchInput" placeholder="Filter by property key (e.g. spring.datasource)..." 
+                               class="w-full px-5 py-3 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:ring-4 focus:ring-indigo-50 outline-none transition-all">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <main id="tableWrapper" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden hidden">
+            <div class="overflow-x-auto overflow-y-auto max-h-[65vh] custom-scrollbar">
+                <table class="w-full border-separate border-spacing-0">
+                    <thead><tr id="tableHeader"></tr></thead>
+                    <tbody id="tableBody" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </main>
     </div>
 
     <script>
-        let profilesData = {}; // Store all parsed profiles
-        let selectedProfileNames = []; // Active profiles for comparison
+        let fullData = {}; 
+        let selectedColumns = [];
         let viewMode = 'all';
         let searchTerm = '';
 
+        const setupUploader = (id, inputId) => {
+            document.getElementById(inputId).addEventListener('change', async function(e) {
+                const projName = document.getElementById(id).value || `Project-${inputId.slice(-1)}`;
+                const files = Array.from(e.target.files);
+                
+                for (let file of files) {
+                    const text = await file.text();
+                    try {
+                        const docs = jsyaml.loadAll(text);
+                        docs.forEach((doc, i) => {
+                            const internalName = doc?.spring?.config?.activate?.['on-profile'] || doc?.spring?.profiles?.active || doc?.spring?.profiles;
+                            const fileName = file.name.replace(/application-|\.ya?ml/g, '');
+                            const profileName = internalName || (docs.length === 1 ? fileName : `${fileName}-${i+1}`);
+                            
+                            const colId = `${projName}::${profileName}`;
+                            const flattened = flatten(doc || {});
+                            
+                            fullData[colId] = fullData[colId] ? { ...fullData[colId], ...flattened } : flattened;
+                            if (!selectedColumns.includes(colId)) selectedColumns.push(colId);
+                        });
+                    } catch (err) { console.error(err); }
+                }
+                document.getElementById('uiControls').classList.remove('hidden');
+                document.getElementById('tableWrapper').classList.remove('hidden');
+                render();
+            });
+        };
+
+        setupUploader('proj1Name', 'fileInput1');
+        setupUploader('proj2Name', 'fileInput2');
+
         function flatten(obj, prefix = '') {
+            if (!obj) return {};
             return Object.keys(obj).reduce((acc, k) => {
                 const pre = prefix.length ? prefix + '.' : '';
                 if (obj[k] !== null && typeof obj[k] === 'object' && !Array.isArray(obj[k])) {
                     Object.assign(acc, flatten(obj[k], pre + k));
-                } else {
-                    acc[pre + k] = obj[k];
-                }
+                } else { acc[pre + k] = obj[k]; }
                 return acc;
             }, {});
         }
 
-        document.getElementById('fileInput').addEventListener('change', function(e) {
-            const files = Array.from(e.target.files);
-            let processedCount = 0;
-
-            files.forEach(file => {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    try {
-                        const docs = jsyaml.loadAll(event.target.result);
-                        docs.forEach((doc, i) => {
-                            const internalName = doc?.spring?.config?.activate?.['on-profile'] || doc?.spring?.profiles?.active || doc?.spring?.profiles;
-                            const fileName = file.name.replace(/application-|\.ya?ml/g, '');
-                            const finalName = internalName || (docs.length === 1 ? fileName : `${fileName}-${i+1}`);
-                            
-                            profilesData[finalName] = flatten(doc || {});
-                            if (!selectedProfileNames.includes(finalName)) {
-                                selectedProfileNames.push(finalName);
-                            }
-                        });
-                    } catch (err) { console.error("Parse Error", err); }
-                    
-                    processedCount++;
-                    if (processedCount === files.length) render();
-                };
-                reader.readAsText(file);
-            });
-        });
+        function toggleCol(id) {
+            selectedColumns = selectedColumns.includes(id) ? selectedColumns.filter(c => c !== id) : [...selectedColumns, id];
+            render();
+        }
 
         function setViewMode(mode) {
             viewMode = mode;
             document.querySelectorAll('.view-btn').forEach(btn => {
-                btn.classList.remove('bg-indigo-600', 'text-white', 'shadow-md');
-                btn.classList.add('bg-white', 'text-slate-600', 'border-slate-200');
+                btn.classList.remove('bg-white', 'shadow-sm', 'text-indigo-600');
+                btn.classList.add('text-slate-500');
             });
-            const activeBtn = document.getElementById(`btn-${mode}`);
-            activeBtn.classList.remove('bg-white', 'text-slate-600', 'border-slate-200');
-            activeBtn.classList.add('bg-indigo-600', 'text-white', 'shadow-md');
+            document.getElementById(`btn-${mode}`).classList.add('bg-white', 'shadow-sm', 'text-indigo-600');
             render();
         }
 
@@ -136,108 +183,67 @@
             render();
         });
 
-        function toggleProfile(name) {
-            if (selectedProfileNames.includes(name)) {
-                selectedProfileNames = selectedProfileNames.filter(p => p !== name);
-            } else {
-                selectedProfileNames.push(name);
-            }
-            render();
-        }
-
-        function clearWorkspace() {
-            profilesData = {};
-            selectedProfileNames = [];
-            document.getElementById('fileInput').value = '';
-            render();
-        }
-
         function render() {
-            const allProfileNames = Object.keys(profilesData);
             const header = document.getElementById('tableHeader');
             const body = document.getElementById('tableBody');
-            const checklist = document.getElementById('profileChecklist');
+            const pills = document.getElementById('profilePills');
+            const allColIds = Object.keys(fullData).sort();
 
-            // 1. Update Profile Checklist UI
-            checklist.innerHTML = allProfileNames.map(name => `
-                <label class="flex items-center gap-2 text-[11px] font-bold text-slate-600 p-2 hover:bg-slate-50 rounded-lg cursor-pointer transition-all border border-transparent hover:border-indigo-100">
-                    <input type="checkbox" ${selectedProfileNames.includes(name) ? 'checked' : ''} 
-                           onchange="toggleProfile('${name}')"
-                           class="rounded border-slate-300 text-indigo-600 focus:ring-0"> 
-                    <span class="truncate">${name}</span>
-                </label>
-            `).join('') || '<p class="text-xs text-slate-400 italic">No profiles loaded...</p>';
+            pills.innerHTML = allColIds.map(id => {
+                const [p, prof] = id.split('::');
+                const active = selectedColumns.includes(id);
+                const color = id.includes(document.getElementById('proj1Name').value) ? 'blue' : 'emerald';
+                
+                return `<button onclick="toggleCol('${id}')" class="px-4 py-2 rounded-xl text-[11px] font-bold border transition-all ${active ? `bg-${color}-600 text-white border-${color}-600 shadow-lg shadow-${color}-100` : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}">
+                    <span class="opacity-60 font-medium">${p}</span> <span class="mx-2 opacity-20">/</span> <span>${prof}</span>
+                </button>`;
+            }).join('');
 
-            // 2. Update Table Header (Only selected profiles)
-            header.innerHTML = '<th class="p-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest sticky-col">Property Path</th>';
-            selectedProfileNames.forEach(name => {
-                const th = document.createElement('th');
-                th.className = "p-4 text-[10px] font-black text-indigo-900 uppercase tracking-widest border-l border-slate-100 text-center min-w-[150px]";
-                th.innerText = name;
-                header.appendChild(th);
+            header.innerHTML = '<th class="p-6 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest sticky-col top-0">Property Path</th>';
+            selectedColumns.forEach(id => {
+                const [p, prof] = id.split('::');
+                const isP1 = id.includes(document.getElementById('proj1Name').value);
+                header.innerHTML += `<th class="p-6 text-center border-l border-slate-50 min-w-[350px] top-0 bg-slate-50/50">
+                    <div class="text-[9px] font-extrabold uppercase tracking-widest ${isP1 ? 'text-blue-500' : 'text-emerald-500'} mb-1">${p}</div>
+                    <div class="text-xs font-black text-slate-900 uppercase">${prof}</div>
+                </th>`;
             });
 
-            // 3. Update Table Body
             body.innerHTML = '';
-            if (selectedProfileNames.length === 0) {
-                body.innerHTML = '<tr><td class="p-20 text-center text-slate-400 italic" colspan="100%">Select at least one profile to compare.</td></tr>';
-                return;
-            }
+            if (selectedColumns.length === 0) return;
 
-            // Get unique keys only from selected profiles
-            const activeKeys = [...new Set(selectedProfileNames.flatMap(p => Object.keys(profilesData[p])))].sort();
+            const masterKeys = [...new Set(selectedColumns.flatMap(c => Object.keys(fullData[c])))].sort();
 
-            activeKeys.forEach(key => {
+            masterKeys.forEach(key => {
                 if (searchTerm && !key.toLowerCase().includes(searchTerm)) return;
+                const vals = selectedColumns.map(c => fullData[c][key]);
+                const isMissing = vals.some(v => v === undefined);
+                const allSame = vals.every(v => JSON.stringify(v) === JSON.stringify(vals[0]));
+                let status = isMissing ? 'MISSING' : (allSame ? 'MATCH' : 'DIFF');
 
-                const values = selectedProfileNames.map(p => profilesData[p][key]);
-                const isMissing = values.some(v => v === undefined);
-                const allSame = values.every(v => JSON.stringify(v) === JSON.stringify(values[0]));
+                if (viewMode === 'diff' && status === 'MATCH') return;
+                if (viewMode === 'missing' && status !== 'MISSING') return;
 
-                let rowClass = 'row-match';
-                let statusLabel = 'MATCH';
-                
-                if (isMissing) {
-                    rowClass = 'row-missing';
-                    statusLabel = 'MISSING';
-                } else if (!allSame) {
-                    rowClass = 'row-diff';
-                    statusLabel = 'DIFF';
-                }
+                const tr = document.createElement('tr');
+                tr.className = `row-${status.toLowerCase()} transition-colors hover:bg-slate-50/80`;
+                let html = `<td class="p-6 sticky-col">
+                    <code class="text-[12px] font-bold text-slate-700 mono break-all">${key}</code>
+                    <div class="flex gap-2 mt-2">
+                        <span class="text-[8px] font-black px-2 py-0.5 rounded-md border ${
+                            status === 'MATCH' ? 'bg-slate-50 text-slate-400 border-slate-200' : 
+                            status === 'DIFF' ? 'bg-amber-50 text-amber-600 border-amber-200' : 
+                            'bg-rose-50 text-rose-600 border-rose-200'
+                        }">${status}</span>
+                    </div>
+                </td>`;
 
-                if (viewMode === 'diff' && statusLabel === 'MATCH') return;
-                if (viewMode === 'missing' && statusLabel !== 'MISSING') return;
-
-                const row = document.createElement('tr');
-                row.className = `${rowClass} group transition-colors`;
-
-                let rowHtml = `
-                    <td class="p-3 border-b border-slate-100 sticky-col shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                        <div class="flex flex-col gap-1">
-                            <code class="text-[11px] font-bold text-slate-700 break-all leading-tight">${key}</code>
-                            <span class="text-[8px] font-black w-fit px-1.5 rounded border ${
-                                statusLabel === 'MATCH' ? 'text-slate-400 border-slate-200' : 
-                                statusLabel === 'DIFF' ? 'text-amber-600 border-amber-200 bg-amber-50' : 
-                                'text-rose-600 border-rose-200 bg-rose-50'
-                            }">${statusLabel}</span>
-                        </div>
-                    </td>
-                `;
-
-                selectedProfileNames.forEach(p => {
-                    const val = profilesData[p][key];
-                    const isUndefined = val === undefined;
-                    rowHtml += `
-                        <td class="p-3 border-b border-slate-100 border-l border-slate-50 text-center font-medium">
-                            <span class="${isUndefined ? 'text-rose-300 italic font-bold opacity-50' : 'text-slate-800'}">
-                                ${isUndefined ? 'NULL' : (val === '' ? '[empty]' : val)}
-                            </span>
-                        </td>
-                    `;
+                selectedColumns.forEach(c => {
+                    const v = fullData[c][key];
+                    html += `<td class="p-6 border-l border-slate-50 align-top">
+                        <div class="value-cell mono text-slate-600">${v === undefined ? '<span class="text-rose-300 opacity-40 font-bold tracking-tighter">NULL</span>' : (v === '' ? '<span class="text-slate-300">[empty]</span>' : v)}</div>
+                    </td>`;
                 });
-
-                row.innerHTML = rowHtml;
-                body.appendChild(row);
+                tr.innerHTML = html; body.appendChild(tr);
             });
         }
     </script>
