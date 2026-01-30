@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Enterprise Java-to-JSON Pro</title>
+    <style>
+        body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 20px; background: #f0f2f5; color: #333; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 1100px; margin: auto; }
+        textarea { width: 100%; height: 160px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-family: 'Consolas', monospace; box-sizing: border-box; font-size: 13px; background: #fafafa; }
+        .toolbar { display: flex; gap: 15px; align-items: center; margin: 20px 0; flex-wrap: wrap; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #eee; }
+        #field-selector { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 15px 0; max-height: 300px; overflow-y: auto; padding: 15px; border: 1px solid #eee; background: #fff; border-radius: 8px; }
+        .field-item { font-size: 13px; display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; border: 1px solid #f0f0f0; }
+        .profile-section { display: flex; gap: 8px; align-items: center; border-left: 2px solid #ddd; padding-left: 15px; }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 8px; overflow-x: auto; font-size: 14px; border: 1px solid #333; }
+        button { padding: 9px 18px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; transition: 0.2s; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; width: 100%; font-size: 16px; padding: 15px; margin-top: 10px; }
+        .btn-outline { background: white; border: 1px solid #ddd; color: #555; }
+        .btn-copy { background: #6c757d; color: white; }
+        .status-badge { font-size: 11px; background: #28a745; color: #fff; padding: 2px 8px; border-radius: 10px; display: none; margin-left: 10px; }
+        .toast { visibility: hidden; min-width: 200px; background-color: #333; color: #fff; text-align: center; border-radius: 4px; padding: 10px; position: fixed; z-index: 1; left: 50%; bottom: 30px; transform: translateX(-50%); }
+        .toast.show { visibility: visible; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
+        @keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
+        @keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h3 style="margin-top:0">Java toString to Postman JSON</h3>
+    <textarea id="input" placeholder="Paste Java string output here..."></textarea>
+
+    <div class="toolbar">
+        <button class="btn-primary" onclick="loadFields()">Analyze Fields</button>
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="font-size: 12px; cursor: pointer;"><input type="checkbox" id="includeNulls"> Include Nulls</label>
+            <label style="font-size: 12px; cursor: pointer;"><input type="checkbox" id="includeEmpty" checked> Include Empties ("", [], {})</label>
+        </div>
+        
+        <div class="profile-section">
+            <input type="text" id="profileName" placeholder="Profile Name" style="padding: 8px; width: 120px; border: 1px solid #ccc; border-radius: 4px;">
+            <button class="btn-outline" onclick="saveProfile()">Save Profile</button>
+            <select id="profileSelect" onchange="applyProfile()" style="padding: 8px; border-radius: 4px;">
+                <option value="">-- Apply Profile --</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="filter-area" style="display:none;">
+        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+            <input type="text" id="searchFields" style="flex-grow:1; padding:10px; border-radius:6px; border:1px solid #ccc;" placeholder="Search fields..." oninput="filterDisplay()">
+            <button class="btn-outline" onclick="toggleAll(true)">All</button>
+            <button class="btn-outline" onclick="toggleAll(false)">None</button>
+        </div>
+        <div id="field-selector"></div>
+        <button class="btn-success" onclick="generateJson()">Generate Postman Payload</button>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 25px;">
+        <div>
+            <h3 style="display:inline-block; margin:0;">Final Payload</h3>
+            <span id="genStatus" class="status-badge">GENERATED!</span>
+        </div>
+        <button class="btn-copy" onclick="copyToClipboard()">Copy JSON</button>
+    </div>
+    <pre id="output">{}</pre>
+</div>
+
+<div id="toast" class="toast">Action Successful!</div>
+
+<script>
+    let rawParsedData = {};
+    let profiles = JSON.parse(localStorage.getItem('javaJsonProfiles') || '{}');
+
+    // 1. Core Parser: Handles the string-to-object conversion
+    function parseUniversal(str) {
+        str = str.trim();
+        const startIdx = str.search(/[\(\{\[]/);
+        const endIdx = Math.max(str.lastIndexOf(')'), str.lastIndexOf('}'), str.lastIndexOf(']'));
+        
+        if (startIdx === -1) return sanitizeRawValue(str);
+
+        const content = str.substring(startIdx + 1, endIdx);
+        const result = {};
+        let i = 0;
+
+        while (i < content.length) {
+            let eqIdx = -1;
+            for (let j = i; j < content.length; j++) {
+                if (content[j] === '=' || content[j] === ':') { eqIdx = j; break; }
+            }
+            if (eqIdx === -1) break;
+
+            let key = content.substring(i, eqIdx).trim().replace(/^,/, '').trim();
+            // Critical fix: Remove any leading/trailing brackets from key names
+            key = key.replace(/^[\(\{\[]|[\)\}\]]$/g, '');
+            i = eqIdx + 1;
+
+            let bracketStack = [];
+            let inQuotes = false;
+            let valEnd = content.length;
+
+            for (let j = i; j < content.length; j++) {
+                let char = content[j];
+                if (char === "'" || char === '"') inQuotes = !inQuotes;
+                if (inQuotes) continue;
+                if (['(', '{', '['].includes(char)) bracketStack.push(char);
+                if ([')', '}', ']'].includes(char)) bracketStack.pop();
+                if (bracketStack.length === 0 && char === ',' && !inQuotes) {
+                    valEnd = j;
+                    break;
+                }
+            }
+
+            let valStr = content.substring(i, valEnd).trim();
+            result[key] = processValue(valStr);
+            i = valEnd + 1;
+        }
+        return result;
+    }
+
+    function processValue(val) {
+        let cleaned = val.trim().replace(/^['"]|['"]$/g, '');
+        let lower = cleaned.toLowerCase();
+
+        if (lower === "null" || lower === "nu11" || lower === "nul1") return null;
+        if (val === "[]") return [];
+
+        // Handle List of Objects (e.g., contact=[(...)])
+        if (val.startsWith('[') && val.endsWith(']')) {
+            const inner = val.slice(1, -1).trim();
+            if (!inner) return [];
+            return splitList(inner).map(item => processValue(item.trim()));
+        }
+
+        // Handle Nested Objects (e.g., address=(...))
+        if (val.includes('=') && (val.includes('(') || val.includes('{'))) {
+            return parseUniversal(val);
+        }
+
+        return cleaned; // Preserve exact string (e.g., 0.00)
+    }
+
+    function splitList(listStr) {
+        let results = [], start = 0, stack = 0, q = false;
+        for (let i = 0; i < listStr.length; i++) {
+            let c = listStr[i];
+            if (c === "'" || c === '"') q = !q;
+            if (!q) {
+                if (['(', '[', '{'].includes(c)) stack++;
+                if ([')', ']', '}'].includes(c)) stack--;
+                if (c === ',' && stack === 0) {
+                    results.push(listStr.substring(start, i));
+                    start = i + 1;
+                }
+            }
+        }
+        results.push(listStr.substring(start));
+        return results;
+    }
+
+    function sanitizeRawValue(v) {
+        return v.trim().replace(/^['"]|['"]$/g, '');
+    }
+
+    // 2. Recursive Cleaner: Removes nulls/empties from all levels
+    function deepClean(obj, includeNulls, includeEmpty) {
+        if (obj === null) return null;
+        if (Array.isArray(obj)) {
+            const arr = obj.map(v => deepClean(v, includeNulls, includeEmpty)).filter(v => {
+                if (!includeNulls && v === null) return false;
+                if (!includeEmpty && (v === "" || (Array.isArray(v) && v.length === 0) || (typeof v === 'object' && v !== null && Object.keys(v).length === 0))) return false;
+                return true;
+            });
+            return arr;
+        } else if (typeof obj === 'object') {
+            const newObj = {};
+            for (let key in obj) {
+                let val = deepClean(obj[key], includeNulls, includeEmpty);
+                let isNull = (val === null);
+                let isEmpty = (val === "" || (Array.isArray(val) && val.length === 0) || (typeof val === 'object' && val !== null && Object.keys(val).length === 0));
+
+                if (!includeNulls && isNull) continue;
+                if (!includeEmpty && isEmpty) continue;
+                
+                newObj[key] = val;
+            }
+            return newObj;
+        }
+        return obj;
+    }
+
+    // 3. UI Logic
+    function loadFields() {
+        rawParsedData = parseUniversal(document.getElementById('input').value);
+        renderFieldList();
+        document.getElementById('filter-area').style.display = 'block';
+        updateProfileDropdown();
+    }
+
+    function renderFieldList() {
+        const container = document.getElementById('field-selector');
+        container.innerHTML = '';
+        Object.keys(rawParsedData).forEach(key => {
+            const div = document.createElement('div');
+            div.className = 'field-item';
+            div.innerHTML = `<input type="checkbox" id="chk_${key}" checked value="${key}"> <label for="chk_${key}">${key}</label>`;
+            container.appendChild(div);
+        });
+    }
+
+    function generateJson() {
+        const includeNulls = document.getElementById('includeNulls').checked;
+        const includeEmpty = document.getElementById('includeEmpty').checked;
+        const selectedKeys = Array.from(document.querySelectorAll('#field-selector input:checked')).map(c => c.value);
+        
+        let filteredData = {};
+        selectedKeys.forEach(k => {
+            filteredData[k] = rawParsedData[k];
+        });
+
+        const finalOutput = deepClean(filteredData, includeNulls, includeEmpty);
+        document.getElementById('output').innerText = JSON.stringify(finalOutput, null, 4);
+        
+        const badge = document.getElementById('genStatus');
+        badge.style.display = 'inline-block';
+        setTimeout(() => { badge.style.display = 'none'; }, 2000);
+    }
+
+    function saveProfile() {
+        const name = document.getElementById('profileName').value;
+        if (!name) return alert("Enter name");
+        profiles[name] = Array.from(document.querySelectorAll('#field-selector input:checked')).map(c => c.value);
+        localStorage.setItem('javaJsonProfiles', JSON.stringify(profiles));
+        updateProfileDropdown();
+        showToast("Profile Saved");
+    }
+
+    function applyProfile() {
+        const name = document.getElementById('profileSelect').value;
+        if (!name) return;
+        const savedKeys = profiles[name];
+        document.querySelectorAll('#field-selector input').forEach(chk => {
+            chk.checked = savedKeys.includes(chk.value);
+        });
+    }
+
+    function updateProfileDropdown() {
+        const sel = document.getElementById('profileSelect');
+        sel.innerHTML = '<option value="">-- Apply Profile --</option>';
+        Object.keys(profiles).forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p; opt.innerText = p;
+            sel.appendChild(opt);
+        });
+    }
+
+    function filterDisplay() {
+        const term = document.getElementById('searchFields').value.toLowerCase();
+        document.querySelectorAll('.field-item').forEach(item => {
+            item.style.display = item.innerText.toLowerCase().includes(term) ? 'flex' : 'none';
+        });
+    }
+
+    function toggleAll(state) {
+        document.querySelectorAll('#field-selector input').forEach(c => c.checked = state);
+    }
+
+    function copyToClipboard() {
+        navigator.clipboard.writeText(document.getElementById('output').innerText);
+        showToast("Copied to Clipboard!");
+    }
+
+    function showToast(msg) {
+        const x = document.getElementById("toast");
+        x.innerText = msg; x.className = "toast show";
+        setTimeout(() => x.className = "toast", 3000);
+    }
+
+    updateProfileDropdown();
+</script>
+</body>
+</html>
